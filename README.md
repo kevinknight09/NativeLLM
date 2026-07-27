@@ -1,97 +1,116 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# NativeLLM 🦙
 
-# Getting Started
+**NativeLLM** is an offline, privacy-first, on-device AI chat application built with React Native. It runs large language models (LLMs) natively on mobile hardware (iOS & Android) without relying on any external cloud APIs or internet connection.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+---
 
-## Step 1: Start Metro
+## 🌟 Key Features
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- **100% Offline & Private**: All inference happens locally on your mobile device. Your data and prompts never leave the phone.
+- **On-Device LLM Inference**: Powered by [`llama.rn`](https://github.com/mybigday/llama.rn) (React Native bindings for `llama.cpp`).
+- **Hardware Acceleration**: 
+  - **iOS**: Metal GPU acceleration.
+  - **Android**: Qualcomm Snapdragon Hexagon DSP & OpenCL acceleration.
+- **Real-time Streaming**: Response tokens are streamed in real time to the UI.
+- **Automatic Model Management**: Automatically downloads and stores model files locally using `react-native-fs`.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+---
 
-```sh
-# Using npm
+## 🏗️ System Architecture & Execution Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant App as React Native UI (App.tsx)
+    participant FS as Local Storage (react-native-fs)
+    participant HF as HuggingFace Hub
+    participant Llama as Native llama.cpp Core (llama.rn)
+
+    App->>FS: Check if Qwen2.5 GGUF model exists locally
+    alt Model Not Found
+        App->>HF: Download GGUF Model (~398 MB)
+        HF-->>FS: Save to DocumentDir/qwen2.5-0.5b-instruct-q4_k_m.gguf
+    end
+    App->>Llama: initLlama({ model: MODEL_PATH, n_ctx: 2048, use_mlock: true })
+    Llama-->>App: LlamaContext initialized & ready
+    
+    User->>App: Sends message ("Hello!")
+    App->>App: Format conversation using ChatML template
+    App->>Llama: llamaContext.completion({ prompt, temperature: 0.7 }, tokenCallback)
+    loop Token Streaming
+        Llama-->>App: Stream token by token
+        App-->>User: Update chat UI in real time
+    end
+```
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: React Native (`0.86.0`)
+- **Language**: TypeScript / React
+- **LLM Engine**: `llama.rn` (bindings for `llama.cpp`)
+- **Model**: `Qwen2.5-0.5B-Instruct` (Quantization: `Q4_K_M`, GGUF format)
+- **File Management**: `react-native-fs`
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Node.js**: `>= 22.11.0`
+- **Android Studio**: Android SDK & NDK installed (for Android build)
+- **Xcode**: Mac required for iOS builds
+- **Physical Device (Recommended)**: For accurate local inference performance testing.
+
+---
+
+### Step 1: Clone & Install Dependencies
+
+```bash
+git clone https://github.com/YOUR_USERNAME/NativeLLM.git
+cd NativeLLM
+npm install
+```
+
+---
+
+### Step 2: Start Metro Bundler
+
+```bash
 npm start
-
-# OR using Yarn
-yarn start
 ```
 
-## Step 2: Build and run your app
+---
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### Step 3: Run on Android / Android Studio
 
-### Android
-
-```sh
-# Using npm
+#### Option A: Via Command Line
+Connect your phone via USB (with USB Debugging enabled) or open an Android Emulator, then run:
+```bash
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+#### Option B: Via Android Studio
+1. Open **Android Studio**.
+2. Click **Open** and select the `android/` subfolder in this repository (`NativeLLM/android`).
+3. Sync Gradle and click the green **Run 'app' (▶️)** button.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+---
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Step 4: Run on iOS
 
-```sh
-bundle install
-```
+For iOS, install CocoaPods first:
 
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+```bash
+cd ios && pod install && cd ..
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+---
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+## 📄 License
 
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+This project is open-source and available under the [MIT License](LICENSE).
