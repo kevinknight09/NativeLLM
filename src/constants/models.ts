@@ -1,0 +1,48 @@
+import { ModelOption } from '../types';
+
+export const AVAILABLE_MODELS: ModelOption[] = [
+  {
+    id: 'smollm2-360m',
+    name: 'SmolLM2 360M',
+    description: 'Ultra-fast & lightweight. Perfect for low-end devices.',
+    ramRequirement: '2 GB - 4 GB RAM',
+    recommendedDevices: 'Budget Android phones, entry-level devices',
+    size: '229 MB',
+    url: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q4_k_m.gguf',
+    filename: 'smollm2-360m-instruct-q4_k_m.gguf',
+    promptTemplate: 'chatml',
+  },
+  {
+    id: 'qwen2.5-0.5b',
+    name: 'Qwen 2.5 0.5B',
+    description: 'Great balance of speed, intelligence, and small footprint.',
+    ramRequirement: '4 GB - 6 GB RAM',
+    recommendedDevices: 'Mid-range phones (Pixel 6a, Galaxy A series, etc.)',
+    size: '398 MB',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    filename: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    promptTemplate: 'chatml',
+  },
+  {
+    id: 'tinyllama-1.1b',
+    name: 'TinyLlama 1.1B',
+    description: 'Popular compact model with good general knowledge.',
+    ramRequirement: '6 GB - 8 GB RAM',
+    recommendedDevices: 'Standard mid-to-high end smartphones',
+    size: '637 MB',
+    url: 'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+    filename: 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+    promptTemplate: 'chatml',
+  },
+  {
+    id: 'llama3.2-1b',
+    name: 'Llama 3.2 1B',
+    description: 'Meta\'s latest state-of-the-art 1B model with high reasoning capability.',
+    ramRequirement: '8 GB+ RAM',
+    recommendedDevices: 'Flagship phones (Galaxy S23/S24, Pixel 8/9, iPhone 15/16 Pro)',
+    size: '808 MB',
+    url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+    filename: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+    promptTemplate: 'llama3',
+  },
+];
