@@ -1,4 +1,4 @@
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Platform, StatusBar } from 'react-native';
 
 export const styles = StyleSheet.create({
   container: {
@@ -6,31 +6,49 @@ export const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   header: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 40) : 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#2C2C2E',
+    backgroundColor: '#161618',
   },
   headerTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 10,
   },
   headerTitle: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  controlGroupLeft: {
+    flexDirection: 'row',
+    gap: 8,
   },
   modelBadge: {
     backgroundColor: '#2C2C2E',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: '#3A3A3C',
+  },
+  activeModelBadge: {
+    backgroundColor: '#1C2D42',
+    borderColor: '#0A84FF',
   },
   modelBadgeText: {
     color: '#0A84FF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   statusText: {

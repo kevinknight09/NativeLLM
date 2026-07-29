@@ -8,7 +8,9 @@
 
 - **100% Offline & Private**: All inference happens locally on your mobile device. Your data and prompts never leave the phone.
 - **On-Device LLM Inference**: Powered by [`llama.rn`](https://github.com/mybigday/llama.rn) (React Native bindings for `llama.cpp`).
+- **Local Multi-Session Chat Persistence**: Save, view, switch between, and manage multiple chat histories stored in your phone's isolated sandbox storage.
 - **RAM-Based Model Selector**: Includes a built-in model picker UI allowing users to choose AI models tuned for their phone's RAM (2GB to 8GB+).
+- **Notch & Hardware Back Button Friendly**: Designed with safe area insets, upper navigation buttons, and system Android back gesture support (`onRequestClose`).
 - **Hardware Acceleration**: 
   - **iOS**: Metal GPU acceleration.
   - **Android**: Qualcomm Snapdragon Hexagon DSP & OpenCL acceleration.
@@ -25,27 +27,30 @@ The project follows a clean, modular architecture separating UI components, busi
 e:\Projects\NativeLLM\
 ├── src/
 │   ├── components/
+│   │   ├── ChatHistoryModal.tsx     # Multi-session chat history viewer & switcher modal
 │   │   ├── ChatMessage.tsx          # Render component for user & assistant message bubbles
 │   │   └── ModelPickerModal.tsx     # RAM-based model selection & download UI modal
 │   ├── constants/
 │   │   └── models.ts                # Registry of GGUF models with download URLs & RAM specs
 │   ├── styles/
-│   │   └── appStyles.ts             # Centralized dark-mode StyleSheet
+│   │   └── appStyles.ts             # Centralized dark-mode StyleSheet with status bar inset handling
 │   ├── types/
-│   │   └── index.ts                 # TypeScript type definitions (Message, ModelOption)
+│   │   └── index.ts                 # TypeScript type definitions (Message, ChatSession, ModelOption)
 │   └── utils/
+│       ├── chatStorage.ts           # Multi-session JSON storage engine for local phone filesystem
 │       └── promptFormatter.ts       # Template formatter for ChatML & Llama-3 headers
-├── App.tsx                          # Core App controller (state management & llama.rn context)
+├── App.tsx                          # Core App controller (state, llama.rn context & session switcher)
 ├── README.md
 └── package.json
 ```
 
 ### Module Responsibilities:
-- **`App.tsx`**: Main application coordinator managing Llama context initialization, token streaming, download progress, and message state.
-- **`src/components/`**: Reusable UI components.
+- **`App.tsx`**: Main application coordinator managing Llama context initialization, token streaming, download progress, multi-session state, and top navigation controls.
+- **`src/utils/chatStorage.ts`**: Handles reading/writing chat sessions as JSON files in the device's private document directory (`DocumentDirectory/chat_sessions/sessions.json`).
+- **`src/components/ChatHistoryModal.tsx`**: Renders the history modal allowing users to create new sessions, open previous chats, or delete history items.
+- **`src/components/ModelPickerModal.tsx`**: Interactive model selection modal featuring RAM requirement guidance, back button navigation, and hardware back gesture support.
 - **`src/constants/models.ts`**: Centralized model registry mapping model identifiers to Hugging Face GGUF direct download endpoints and device requirements.
 - **`src/utils/promptFormatter.ts`**: Pure helper utility converting chat history into model-specific prompt templates (`ChatML` vs `Llama 3`).
-- **`src/styles/appStyles.ts`**: Isolated React Native stylesheet ensuring UI aesthetics are decoupled from business logic.
 
 ---
 
@@ -56,18 +61,19 @@ sequenceDiagram
     autonumber
     actor User
     participant App as React Native UI (App.tsx)
+    participant Storage as chatStorage (Local Disk)
+    participant History as ChatHistoryModal
     participant Picker as ModelPickerModal
-    participant FS as Local Storage (react-native-fs)
-    participant HF as HuggingFace Hub
     participant Llama as Native llama.cpp Core (llama.rn)
 
+    App->>Storage: loadAllSessions() on app launch
+    Storage-->>App: Restore past chat sessions & active conversation
+    
+    User->>History: Tap "History 📜" -> Open Chat History Modal
+    History-->>App: Select session or create "+ New Chat"
+    
     User->>Picker: Select model based on RAM (e.g. Qwen 2.5 0.5B)
     Picker->>App: Trigger handleSelectModel(selectedModel)
-    App->>FS: Check if GGUF file exists in DocumentDirectory
-    alt Model Not Found
-        App->>HF: Download GGUF Model via HTTPS
-        HF-->>FS: Save to DocumentDir/qwen2.5-0.5b-instruct-q4_k_m.gguf
-    end
     App->>Llama: initLlama({ model: MODEL_PATH, n_ctx: 2048, use_mlock: true })
     Llama-->>App: LlamaContext initialized & ready
     
@@ -78,6 +84,7 @@ sequenceDiagram
         Llama-->>App: Stream token by token
         App-->>User: Update ChatMessage UI in real time
     end
+    App->>Storage: saveAllSessions(updatedSessions) [Auto-saved locally]
 ```
 
 ---
@@ -98,8 +105,8 @@ sequenceDiagram
 - **Framework**: React Native (`0.86.0`)
 - **Language**: TypeScript / React
 - **LLM Engine**: `llama.rn` (bindings for `llama.cpp`)
+- **Storage**: Local JSON filesystem storage via `react-native-fs`
 - **Supported Quantizations**: `Q4_K_M` GGUF models
-- **File Management**: `react-native-fs`
 
 ---
 

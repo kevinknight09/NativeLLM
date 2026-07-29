@@ -14,23 +14,33 @@ import {
 import { initLlama, LlamaContext } from 'llama.rn';
 import RNFS from 'react-native-fs';
 
-import { Message, ModelOption } from './src/types';
+import { Message, ModelOption, ChatSession } from './src/types';
 import { AVAILABLE_MODELS } from './src/constants/models';
 import { styles } from './src/styles/appStyles';
 import { ModelPickerModal } from './src/components/ModelPickerModal';
+import { ChatHistoryModal } from './src/components/ChatHistoryModal';
 import { ChatMessage } from './src/components/ChatMessage';
 import { formatPrompt } from './src/utils/promptFormatter';
+import { saveAllSessions, loadAllSessions, deleteSessionFromDisk } from './src/utils/chatStorage';
+
+const INITIAL_SYSTEM_MESSAGE: Message = {
+  id: '1',
+  role: 'system',
+  content: 'You are NativeLLM, a helpful, completely private AI assistant.',
+};
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'system', content: 'You are NativeLLM, a helpful, completely private AI assistant.' },
-    { id: '2', role: 'assistant', content: 'Hello! I am NativeLLM. Select a model to start chatting offline.' },
-  ]);
+  // Multi-session state
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([INITIAL_SYSTEM_MESSAGE]);
+
   const [inputText, setInputText] = useState('');
   
-  // Model & State Selection
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(AVAILABLE_MODELS[1]); // Default Qwen2.5 0.5B
-  const [showModelModal, setShowModelModal] = useState<boolean>(true);
+  // Model Selection state
+  const [selectedModel, setSelectedModel] = useState<ModelOption>(AVAILABLE_MODELS[1]);
+  const [showModelModal, setShowModelModal] = useState<boolean>(false);
+  const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
 
   // Status
@@ -42,6 +52,7 @@ export default function App() {
 
   useEffect(() => {
     checkDownloadedModels();
+    initializeSessions();
   }, []);
 
   const checkDownloadedModels = async () => {
@@ -53,11 +64,63 @@ export default function App() {
     setDownloadedModels(statusMap);
   };
 
+  const initializeSessions = async () => {
+    const loadedSessions = await loadAllSessions();
+    setSessions(loadedSessions);
+
+    if (loadedSessions.length > 0) {
+      // Restore most recent session
+      const latest = loadedSessions[0];
+      setCurrentSessionId(latest.id);
+      setMessages(latest.messages);
+    } else {
+      // Create first default session
+      createNewSession([], loadedSessions);
+    }
+  };
+
+  const createNewSession = (existingMessages: Message[] = [], currentSessions = sessions) => {
+    const newId = Date.now().toString();
+    const newSession: ChatSession = {
+      id: newId,
+      title: 'New Conversation',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: existingMessages.length > 0 ? existingMessages : [INITIAL_SYSTEM_MESSAGE],
+    };
+
+    const updated = [newSession, ...currentSessions];
+    setSessions(updated);
+    setCurrentSessionId(newId);
+    setMessages(newSession.messages);
+    saveAllSessions(updated);
+    return newSession;
+  };
+
+  const handleSelectSession = (session: ChatSession) => {
+    setCurrentSessionId(session.id);
+    setMessages(session.messages);
+    setShowHistoryModal(false);
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    const updated = await deleteSessionFromDisk(sessionId, sessions);
+    setSessions(updated);
+
+    if (currentSessionId === sessionId) {
+      if (updated.length > 0) {
+        setCurrentSessionId(updated[0].id);
+        setMessages(updated[0].messages);
+      } else {
+        createNewSession([], []);
+      }
+    }
+  };
+
   const handleSelectModel = async (model: ModelOption) => {
     setSelectedModel(model);
     setShowModelModal(false);
     
-    // Release previous context if loaded
     if (llamaContext) {
       try {
         await llamaContext.release();
@@ -109,6 +172,31 @@ export default function App() {
     }
   };
 
+  const persistCurrentMessages = (updatedMsgs: Message[]) => {
+    setSessions((prevSessions) => {
+      const now = Date.now();
+      const firstUserMsg = updatedMsgs.find(m => m.role === 'user')?.content;
+      const title = firstUserMsg ? (firstUserMsg.length > 30 ? firstUserMsg.slice(0, 30) + '...' : firstUserMsg) : 'New Conversation';
+
+      const updated = prevSessions.map((s) => {
+        if (s.id === currentSessionId) {
+          return {
+            ...s,
+            title: s.title === 'New Conversation' ? title : s.title,
+            updatedAt: now,
+            messages: updatedMsgs,
+          };
+        }
+        return s;
+      });
+
+      // Sort by most recently updated
+      updated.sort((a, b) => b.updatedAt - a.updatedAt);
+      saveAllSessions(updated);
+      return updated;
+    });
+  };
+
   const sendMessage = async () => {
     if (!inputText.trim() || isGenerating || !llamaContext) return;
 
@@ -140,13 +228,20 @@ export default function App() {
         temperature: 0.7,
       }, (res) => {
         assistantResponse += res.token;
-        setMessages((prev) => 
-          prev.map((msg) => 
-            msg.id === assistantMessageId 
+        setMessages((prev) => {
+          const next = prev.map((msg) =>
+            msg.id === assistantMessageId
               ? { ...msg, content: assistantResponse }
               : msg
-          )
-        );
+          );
+          return next;
+        });
+      });
+
+      // Persist conversation to session history
+      setMessages((prev) => {
+        persistCurrentMessages(prev);
+        return prev;
       });
     } catch (error) {
       console.error('Inference error:', error);
@@ -161,14 +256,39 @@ export default function App() {
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
           <Text style={styles.headerTitle}>NativeLLM 🦙</Text>
-          <TouchableOpacity 
-            style={styles.modelBadge} 
+          <TouchableOpacity
+            style={[styles.modelBadge, styles.activeModelBadge]}
             onPress={() => setShowModelModal(true)}
           >
-            <Text style={styles.modelBadgeText}>Model: {selectedModel.name} ⚙️</Text>
+            <Text style={styles.modelBadgeText}>🧠 {selectedModel.name}</Text>
           </TouchableOpacity>
         </View>
-        
+
+        <View style={styles.controlsRow}>
+          <View style={styles.controlGroupLeft}>
+            <TouchableOpacity
+              style={styles.modelBadge}
+              onPress={() => setShowHistoryModal(true)}
+            >
+              <Text style={styles.modelBadgeText}>📜 History</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modelBadge}
+              onPress={() => createNewSession()}
+            >
+              <Text style={styles.modelBadgeText}>➕ New Chat</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.modelBadge}
+            onPress={() => setShowModelModal(true)}
+          >
+            <Text style={styles.modelBadgeText}>⚙️ Models</Text>
+          </TouchableOpacity>
+        </View>
+
         {isDownloading && (
           <Text style={styles.statusText}>Downloading {selectedModel.name}: {downloadProgress.toFixed(1)}%</Text>
         )}
@@ -176,9 +296,9 @@ export default function App() {
           <Text style={styles.statusText}>Loading model into RAM...</Text>
         )}
       </View>
-      
-      <KeyboardAvoidingView 
-        style={styles.chatContainer} 
+
+      <KeyboardAvoidingView
+        style={styles.chatContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <FlatList
@@ -198,11 +318,11 @@ export default function App() {
             multiline
             editable={!!llamaContext && !isGenerating}
           />
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.sendButton, 
-              (!inputText.trim() || isGenerating || !llamaContext) && styles.sendButtonDisabled
-            ]} 
+              styles.sendButton,
+              (!inputText.trim() || isGenerating || !llamaContext) && styles.sendButtonDisabled,
+            ]}
             onPress={sendMessage}
             disabled={!inputText.trim() || isGenerating || !llamaContext}
           >
@@ -222,6 +342,19 @@ export default function App() {
         hasLoadedContext={!!llamaContext}
         onSelectModel={handleSelectModel}
         onClose={() => setShowModelModal(false)}
+      />
+
+      <ChatHistoryModal
+        visible={showHistoryModal}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={() => {
+          createNewSession();
+          setShowHistoryModal(false);
+        }}
+        onDeleteSession={handleDeleteSession}
+        onClose={() => setShowHistoryModal(false)}
       />
     </SafeAreaView>
   );

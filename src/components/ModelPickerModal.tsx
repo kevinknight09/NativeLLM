@@ -22,10 +22,22 @@ export const ModelPickerModal: React.FC<ModelPickerModalProps> = ({
   onClose,
 }) => {
   return (
-    <Modal visible={visible} animationType="slide" transparent={false}>
+    <Modal 
+      visible={visible} 
+      animationType="slide" 
+      transparent={false}
+      onRequestClose={hasLoadedContext ? onClose : undefined}
+    >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Select AI Model</Text>
+          <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
+            <Text style={styles.modalTitle}>Select AI Model</Text>
+            {hasLoadedContext && (
+              <TouchableOpacity style={styles.modelBadge} onPress={onClose}>
+                <Text style={styles.modelBadgeText}>← Back</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <Text style={styles.modalSubtitle}>Choose a model recommended for your device's RAM:</Text>
         </View>
 
