@@ -1,4 +1,4 @@
-import { StyleSheet, Platform, StatusBar } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 
 export const styles = StyleSheet.create({
   container: {
@@ -7,7 +7,7 @@ export const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 40) : 12,
+    paddingTop: Platform.OS === 'android' ? 40 : 12,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#2C2C2E',
@@ -23,6 +23,35 @@ export const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 22,
     fontWeight: 'bold',
+  },
+  welcomeContainer: {
+    alignItems: 'center',
+    marginTop: 60,
+    marginBottom: 40,
+  },
+  iconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#2C2C2E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#3A3A3C',
+  },
+  iconText: {
+    fontSize: 50,
+  },
+  welcomeTitle: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: 'bold',
+  },
+  welcomeSubtitle: {
+    color: '#8E8E93',
+    fontSize: 18,
+    marginTop: 10,
   },
   controlsRow: {
     flexDirection: 'row',

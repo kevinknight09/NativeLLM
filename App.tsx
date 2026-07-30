@@ -38,7 +38,7 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   
   // Model Selection state
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(AVAILABLE_MODELS[1]);
+  const [selectedModel, setSelectedModel] = useState<ModelOption>(AVAILABLE_MODELS[0]);
   const [showModelModal, setShowModelModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
@@ -51,8 +51,17 @@ export default function App() {
   const [llamaContext, setLlamaContext] = useState<LlamaContext | null>(null);
 
   useEffect(() => {
-    checkDownloadedModels();
-    initializeSessions();
+    const startup = async () => {
+      await checkDownloadedModels();
+      await initializeSessions();
+
+      // Auto-load model if it's already downloaded
+      const modelPath = `${RNFS.DocumentDirectoryPath}/${selectedModel.filename}`;
+      if (await RNFS.exists(modelPath)) {
+        setupModel(selectedModel);
+      }
+    };
+    startup();
   }, []);
 
   const checkDownloadedModels = async () => {
@@ -134,9 +143,20 @@ export default function App() {
   };
 
   const setupModel = async (modelToLoad: ModelOption) => {
+    if (isInitializing || isDownloading) return;
+
     const modelPath = `${RNFS.DocumentDirectoryPath}/${modelToLoad.filename}`;
     try {
-      const exists = await RNFS.exists(modelPath);
+      let exists = await RNFS.exists(modelPath);
+
+      // If file exists, check if it's not empty (prevents corrupted loads)
+      if (exists) {
+        const stats = await RNFS.stat(modelPath);
+        if (stats.size === 0) {
+          await RNFS.unlink(modelPath);
+          exists = false;
+        }
+      }
       
       if (!exists) {
         setIsDownloading(true);
@@ -149,24 +169,47 @@ export default function App() {
             setDownloadProgress(progress);
           },
         });
-        await download.promise;
+        const result = await download.promise;
         setIsDownloading(false);
+
+        if (result.statusCode !== 200) {
+          throw new Error(`Download failed with status ${result.statusCode}`);
+        }
+
         setDownloadedModels((prev) => ({ ...prev, [modelToLoad.id]: true }));
       }
 
       setIsInitializing(true);
+
+      // Ensure any existing context is released before loading new one
+      if (llamaContext) {
+        try { await llamaContext.release(); } catch (e) {
+          console.log('Error releasing context:', e);
+        }
+        setLlamaContext(null);
+      }
+
+      console.log('Initializing Llama with model:', modelPath);
       const context = await initLlama({
         model: modelPath,
-        use_mlock: true,
-        n_ctx: 2048,
-        n_gpu_layers: Platform.OS === 'ios' ? 100 : 0,
+        use_mlock: false,
+        n_ctx: 512, // Even smaller context to be extremely safe
+        n_gpu_layers: 0, // Explicitly 0 for Android CPU
       });
       
       setLlamaContext(context);
-      setIsInitializing(false);
-
     } catch (error) {
       console.error('Failed to setup model:', error);
+      // Fallback for user notification
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'system',
+          content: `⚠️ Error loading model: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again or select a different model.`
+        }
+      ]);
+    } finally {
       setIsInitializing(false);
       setIsDownloading(false);
     }
@@ -250,6 +293,16 @@ export default function App() {
     }
   };
 
+  const renderWelcomeHeader = () => (
+    <View style={styles.welcomeContainer}>
+      <View style={styles.iconContainer}>
+        <Text style={styles.iconText}>🦙</Text>
+      </View>
+      <Text style={styles.welcomeTitle}>NativeLLM</Text>
+      <Text style={styles.welcomeSubtitle}>100% offline personal AI</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -306,6 +359,7 @@ export default function App() {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <ChatMessage message={item} />}
           contentContainerStyle={styles.messageList}
+          ListHeaderComponent={messages.length <= 1 ? renderWelcomeHeader : null}
         />
 
         <View style={styles.inputContainer}>
