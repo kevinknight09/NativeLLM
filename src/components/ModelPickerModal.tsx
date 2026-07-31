@@ -26,17 +26,15 @@ export const ModelPickerModal: React.FC<ModelPickerModalProps> = ({
       visible={visible} 
       animationType="slide" 
       transparent={false}
-      onRequestClose={hasLoadedContext ? onClose : undefined}
+      onRequestClose={onClose}
     >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
           <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
             <Text style={styles.modalTitle}>Select AI Model</Text>
-            {hasLoadedContext && (
-              <TouchableOpacity style={styles.modelBadge} onPress={onClose}>
-                <Text style={styles.modelBadgeText}>← Back</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={styles.modelBadge} onPress={onClose}>
+              <Text style={styles.modelBadgeText}>← Back</Text>
+            </TouchableOpacity>
           </View>
           <Text style={styles.modalSubtitle}>Choose a model recommended for your device's RAM:</Text>
         </View>
@@ -49,7 +47,7 @@ export const ModelPickerModal: React.FC<ModelPickerModalProps> = ({
             return (
               <TouchableOpacity
                 key={item.id}
-                style={[styles.modelCard, isSelected && styles.selectedModelCard]}
+                style={[styles.modelCard, isSelected && hasLoadedContext && styles.selectedModelCard]}
                 onPress={() => onSelectModel(item)}
               >
                 <View style={styles.cardHeader}>
@@ -69,11 +67,15 @@ export const ModelPickerModal: React.FC<ModelPickerModalProps> = ({
                 <Text style={styles.deviceText}>📱 Suitable for: {item.recommendedDevices}</Text>
 
                 <TouchableOpacity
-                  style={[styles.selectBtn, isSelected && styles.selectedBtn]}
+                  style={[styles.selectBtn, isSelected && hasLoadedContext && styles.selectedBtn]}
                   onPress={() => onSelectModel(item)}
                 >
                   <Text style={styles.selectBtnText}>
-                    {isSelected ? 'Currently Selected' : isDownloaded ? 'Load Model' : 'Download & Load'}
+                    {isSelected && hasLoadedContext
+                      ? 'Currently Active'
+                      : isDownloaded
+                      ? 'Load Model into RAM'
+                      : 'Download & Load'}
                   </Text>
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -81,11 +83,9 @@ export const ModelPickerModal: React.FC<ModelPickerModalProps> = ({
           })}
         </ScrollView>
 
-        {hasLoadedContext && (
-          <TouchableOpacity style={styles.closeModalBtn} onPress={onClose}>
-            <Text style={styles.closeModalText}>Close Selection</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={styles.closeModalBtn} onPress={onClose}>
+          <Text style={styles.closeModalText}>Close Selection</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     </Modal>
   );

@@ -19,6 +19,7 @@ import { AVAILABLE_MODELS } from './src/constants/models';
 import { styles } from './src/styles/appStyles';
 import { ModelPickerModal } from './src/components/ModelPickerModal';
 import { ChatHistoryModal } from './src/components/ChatHistoryModal';
+import { AboutModal } from './src/components/AboutModal';
 import { ChatMessage } from './src/components/ChatMessage';
 import { formatPrompt } from './src/utils/promptFormatter';
 import { saveAllSessions, loadAllSessions, deleteSessionFromDisk } from './src/utils/chatStorage';
@@ -41,6 +42,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<ModelOption>(AVAILABLE_MODELS[0]);
   const [showModelModal, setShowModelModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
 
   // Status
@@ -55,10 +57,14 @@ export default function App() {
       await checkDownloadedModels();
       await initializeSessions();
 
-      // Auto-load model if it's already downloaded
+      // Only auto-load model into RAM if it is ALREADY downloaded on disk.
+      // Do NOT trigger automatic downloads on launch; let the user download manually.
       const modelPath = `${RNFS.DocumentDirectoryPath}/${selectedModel.filename}`;
       if (await RNFS.exists(modelPath)) {
-        setupModel(selectedModel);
+        const stats = await RNFS.stat(modelPath);
+        if (stats.size > 0) {
+          setupModel(selectedModel);
+        }
       }
     };
     startup();
@@ -129,12 +135,12 @@ export default function App() {
   const handleSelectModel = async (model: ModelOption) => {
     setSelectedModel(model);
     setShowModelModal(false);
-    
+
     if (llamaContext) {
       try {
         await llamaContext.release();
       } catch (e) {
-        console.log('Error releasing context', e);
+        console.log('Error releasing context:', e);
       }
       setLlamaContext(null);
     }
@@ -143,13 +149,14 @@ export default function App() {
   };
 
   const setupModel = async (modelToLoad: ModelOption) => {
-    if (isInitializing || isDownloading) return;
+    // Avoid double triggering if download is already in progress for this model
+    if (isDownloading) return;
 
     const modelPath = `${RNFS.DocumentDirectoryPath}/${modelToLoad.filename}`;
     try {
       let exists = await RNFS.exists(modelPath);
 
-      // If file exists, check if it's not empty (prevents corrupted loads)
+      // Check if file exists and is valid (> 0 bytes)
       if (exists) {
         const stats = await RNFS.stat(modelPath);
         if (stats.size === 0) {
@@ -157,56 +164,89 @@ export default function App() {
           exists = false;
         }
       }
-      
+
+      // Download file if it doesn't exist
       if (!exists) {
         setIsDownloading(true);
         setDownloadProgress(0);
+
         const download = RNFS.downloadFile({
           fromUrl: modelToLoad.url,
           toFile: modelPath,
+          background: true, // Continues downloading in background if app is minimized
+          discretionary: true,
+          progressDivider: 1,
           progress: (res) => {
-            const progress = (res.bytesWritten / res.contentLength) * 100;
-            setDownloadProgress(progress);
+            if (res.contentLength > 0) {
+              const progress = (res.bytesWritten / res.contentLength) * 100;
+              setDownloadProgress(Math.min(100, Math.max(0, progress)));
+            }
           },
         });
+
         const result = await download.promise;
         setIsDownloading(false);
 
-        if (result.statusCode !== 200) {
-          throw new Error(`Download failed with status ${result.statusCode}`);
+        if (result.statusCode !== 200 && result.statusCode !== 302) {
+          if (await RNFS.exists(modelPath)) {
+            await RNFS.unlink(modelPath);
+          }
+          throw new Error(`Download failed (HTTP status ${result.statusCode})`);
         }
 
+        // Verify downloaded file existence and non-zero size
+        const fileExistsAfterDownload = await RNFS.exists(modelPath);
+        if (!fileExistsAfterDownload) {
+          throw new Error('Download completed, but model file was not saved.');
+        }
+
+        const downloadedStats = await RNFS.stat(modelPath);
+        if (downloadedStats.size === 0) {
+          await RNFS.unlink(modelPath);
+          throw new Error('Downloaded file is empty (0 bytes). Please retry.');
+        }
+
+        // Mark as downloaded in state
         setDownloadedModels((prev) => ({ ...prev, [modelToLoad.id]: true }));
+        await checkDownloadedModels();
       }
 
+      // Model is present on disk -> Now load into RAM
       setIsInitializing(true);
 
-      // Ensure any existing context is released before loading new one
+      // Release any existing native context
       if (llamaContext) {
-        try { await llamaContext.release(); } catch (e) {
-          console.log('Error releasing context:', e);
+        try {
+          await llamaContext.release();
+        } catch (e) {
+          console.log('Error releasing context before load:', e);
         }
         setLlamaContext(null);
       }
 
-      console.log('Initializing Llama with model:', modelPath);
+      console.log('Loading GGUF model into RAM:', modelPath);
       const context = await initLlama({
         model: modelPath,
         use_mlock: false,
-        n_ctx: 512, // Even smaller context to be extremely safe
-        n_gpu_layers: 0, // Explicitly 0 for Android CPU
+        n_ctx: 512,
+        n_gpu_layers: 0,
       });
-      
+
+      if (!context) {
+        throw new Error('llama.rn returned null context during initialization.');
+      }
+
       setLlamaContext(context);
+      console.log('Successfully initialized model context in RAM.');
     } catch (error) {
       console.error('Failed to setup model:', error);
-      // Fallback for user notification
-      setMessages(prev => [
+      setLlamaContext(null);
+      setMessages((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'system',
-          content: `⚠️ Error loading model: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again or select a different model.`
+          content: `⚠️ Error setting up model (${modelToLoad.name}): ${error instanceof Error ? error.message : 'Unknown error'}. Please tap 'Models' to try again.`
         }
       ]);
     } finally {
@@ -300,8 +340,24 @@ export default function App() {
       </View>
       <Text style={styles.welcomeTitle}>NativeLLM</Text>
       <Text style={styles.welcomeSubtitle}>100% offline personal AI</Text>
+
+      {!llamaContext && !isDownloading && !isInitializing && (
+        <TouchableOpacity
+          style={[styles.modelBadge, styles.activeModelBadge, { marginTop: 24, paddingVertical: 12, paddingHorizontal: 20 }]}
+          onPress={() => setShowModelModal(true)}
+        >
+          <Text style={[styles.modelBadgeText, { fontSize: 16 }]}>⚙️ Choose & Download Model</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
+
+  const getPlaceholderText = () => {
+    if (isDownloading) return `Downloading ${selectedModel.name} (${downloadProgress.toFixed(0)}%)...`;
+    if (isInitializing) return `Loading ${selectedModel.name} into RAM...`;
+    if (!llamaContext) return `Tap 'Models' above to choose & download a model...`;
+    return `Message ${selectedModel.name}...`;
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -334,12 +390,21 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.modelBadge}
-            onPress={() => setShowModelModal(true)}
-          >
-            <Text style={styles.modelBadgeText}>⚙️ Models</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <TouchableOpacity
+              style={styles.modelBadge}
+              onPress={() => setShowModelModal(true)}
+            >
+              <Text style={styles.modelBadgeText}>⚙️ Models</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modelBadge}
+              onPress={() => setShowAboutModal(true)}
+            >
+              <Text style={styles.modelBadgeText}>ℹ️ About</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {isDownloading && (
@@ -367,7 +432,7 @@ export default function App() {
             style={styles.textInput}
             value={inputText}
             onChangeText={setInputText}
-            placeholder={!llamaContext ? 'Loading model...' : `Message ${selectedModel.name}...`}
+            placeholder={getPlaceholderText()}
             placeholderTextColor="#888"
             multiline
             editable={!!llamaContext && !isGenerating}
@@ -409,6 +474,11 @@ export default function App() {
         }}
         onDeleteSession={handleDeleteSession}
         onClose={() => setShowHistoryModal(false)}
+      />
+
+      <AboutModal
+        visible={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
       />
     </SafeAreaView>
   );
